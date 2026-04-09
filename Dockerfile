@@ -1,6 +1,6 @@
 # 1. 基础镜像：改用阿里云托管的镜像源，解决 Docker Hub 429 频率限制问题
 # 如果此源失效，可尝试 registry.cn-hangzhou.aliyuncs.com/google_containers/cuda:12.1.0-devel-ubuntu22.04
-FROM mcr.microsoft.com/mirror/docker.io/nvidia/cuda:12.1.0-devel-ubuntu22.04
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
 # 2. 环境设置
 ENV DEBIAN_FRONTEND=noninteractive
