@@ -18,7 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     git \
     python3-pip \
-    cmake && \
+    cmake \
+    libgrpc++-dev \
+    libprotobuf-dev \
+    protobuf-compiler-grpc && \
     # 设置时区
     ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     dpkg-reconfigure --frontend noninteractive tzdata && \
