@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "ShipGravityLab_Optimizer": {
-      "type": "stdio",
-      "command": "python3",
-      "args": ["/home/chen/projects/ShipGravityLab/scripts/gpu_mcp.py"]
-    }
-  }
-}
