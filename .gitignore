@@ -7,4 +7,7 @@ build/
 CMakeSettings.json
 third_party/
 testconfigs/
+tests/
+build_linux/
+docs/
 EOF

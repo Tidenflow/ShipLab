@@ -1,0 +1,27 @@
+syntax = "proto3";
+package sim;
+
+service SimulationService {
+    // 接口 1: 加载并获取网格数据用于渲染
+    rpc GetMesh (MeshRequest) returns (MeshResponse);
+    // 接口 2: 执行重心计算
+    rpc RunAnalysis (AnalysisRequest) returns (AnalysisResult);
+}
+
+message MeshRequest {
+    string file_path        = 1;
+    bool   skip_mesh_data   = 2; // 为 true 时只解析文件，不回传顶点/索引（用于超大模型"只算不看"）
+    int32  downsample_ratio = 3; // 抽稀比例：N 表示每隔 N 个单元取 1 个（0/1 = 不抽稀）
+    bool   zero_data_test   = 4; // 诊断模式：解析成功但返回空数组，用于定位崩溃是传输还是渲染引起的
+}
+message MeshResponse {
+    repeated double vertices = 1; // 格式: [x1, y1, z1, x2, y2, z2...]
+    repeated int32 indices = 2;   // 单元索引（三角形，3个一组）
+    repeated float normals = 3;   // 每个顶点的法向量 [nx1, ny1, nz1, nx2, ny2, nz2...]
+}
+message AnalysisRequest { double density = 1; }
+message AnalysisResult {
+    double x = 1; double y = 2; double z = 3;
+    double total_mass = 4;
+    double execution_time_ms = 5;
+}

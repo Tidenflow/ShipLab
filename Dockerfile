@@ -39,6 +39,8 @@ RUN rm -rf build_linux && mkdir build_linux && cd build_linux && \
     cmake -DCMAKE_CUDA_ARCHITECTURES=89 .. && \
     make -j$(nproc)
 
-# 7. 启动命令
-# 确保路径与编译输出一致
-CMD ["/app/build_linux/ShipGravityLab", "testconfigs/cangduan1-jm.inp"]
+# 暴露 gRPC 端口
+EXPOSE 50051
+
+# 7. 启动命令：默认启动 gRPC 后端服务
+CMD ["/app/build_linux/ShipGravityServer"]
