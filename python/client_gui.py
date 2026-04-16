@@ -605,7 +605,7 @@ class MainWindow(QMainWindow):
     def _on_mesh_received(self, vertices, indices, skipped: bool):
         if skipped or vertices is None or len(vertices) == 0:
             return
-
+    
         # 1. 顶点转换与 3D 校验
         try:
             raw_v = np.array(vertices, dtype=np.float32)
@@ -613,7 +613,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self._log(f"[错误] 顶点数据对齐失败: {e}")
             return
-
+    
         # 验证各轴跨度
         x_min, x_max = v_np[:, 0].min(), v_np[:, 0].max()
         y_min, y_max = v_np[:, 1].min(), v_np[:, 1].max()
@@ -621,55 +621,99 @@ class MainWindow(QMainWindow):
         self._log(f"[DEBUG] 模型边界: X=[{x_min:.4f}, {x_max:.4f}], Y=[{y_min:.4f}, {y_max:.4f}], Z=[{z_min:.4f}, {z_max:.4f}]")
         if abs(x_max - x_min) < 1e-6 or abs(y_max - y_min) < 1e-6 or abs(z_max - z_min) < 1e-6:
             self._log("[警告] 检测到某轴无跨度，模型可能存在塌陷！")
-
+    
         vtk_pts = vtk.vtkPoints()
         vtk_pts.SetData(numpy_support.numpy_to_vtk(v_np, deep=True))
-
+    
         # 2. 索引解析 (处理 -1 分隔符)
         idx_np = np.array(indices, dtype=np.int64)
         sep_pos = np.where(idx_np == -1)[0]
         starts = np.concatenate(([0], sep_pos[:-1] + 1))
         lengths = sep_pos - starts
-
-        cells = vtk.vtkCellArray()
+    
+        # ==============================================
+        # 【升级：支持所有单元类型：点、线、面、体】
+        # ==============================================
+        polys = vtk.vtkCellArray()    # 面单元
+        lines = vtk.vtkCellArray()    # 线/梁单元
+        vertices_cell = vtk.vtkCellArray()  # 点单元
+        volumes = vtk.vtkCellArray()  # 实体单元（四面体/六面体）
+    
         for s, l in zip(starts, lengths):
-            if l >= 3:
-                cells.InsertNextCell(l)
-                for i in range(l):
-                    cells.InsertCellPoint(idx_np[s + i])
-
-        # 3. 组装与 3D 效果优化
+            if l < 1:
+                continue
+    
+            # 取出当前单元的节点ID
+            cell_ids = idx_np[s:s+l]
+    
+            # --------------------------
+            # 1) 点单元 (1节点)
+            # --------------------------
+            if l == 1:
+                vertices_cell.InsertNextCell(1)
+                vertices_cell.InsertCellPoint(cell_ids[0])
+    
+            # --------------------------
+            # 2) 杆/梁单元 (2节点)
+            # --------------------------
+            elif l == 2:
+                lines.InsertNextCell(2)
+                lines.InsertCellPoint(cell_ids[0])
+                lines.InsertCellPoint(cell_ids[1])
+    
+            # --------------------------
+            # 3) 面单元 (3,4节点：三角/四边形)
+            # --------------------------
+            elif 3 <= l <= 4:
+                polys.InsertNextCell(l)
+                for pid in cell_ids:
+                    polys.InsertCellPoint(pid)
+    
+            # --------------------------
+            # 4) 实体单元 (4,8节点：四面体/六面体)
+            # --------------------------
+            elif l == 4 or l == 8:
+                volumes.InsertNextCell(l)
+                for pid in cell_ids:
+                    volumes.InsertCellPoint(pid)
+    
+        # 3. 组装所有单元到 VTK 数据集
         poly_data = vtk.vtkPolyData()
         poly_data.SetPoints(vtk_pts)
-        poly_data.SetPolys(cells)
-
+        poly_data.SetVerts(vertices_cell)   # 点
+        poly_data.SetLines(lines)           # 线/梁
+        poly_data.SetPolys(polys)           # 面
+        poly_data.SetStrips(volumes)        # 实体（兼容VTK显示）
+    
+        # 法线计算：只对面单元生效，不影响点/线
         normals = vtk.vtkPolyDataNormals()
         normals.SetInputData(poly_data)
         normals.ConsistencyOn()
         normals.AutoOrientNormalsOn()
         normals.SetFeatureAngle(80.0)
         normals.Update()
-
+    
         # 4. 渲染设置
         self._mesh_mapper = vtk.vtkPolyDataMapper()
         self._mesh_mapper.SetInputData(normals.GetOutput())
         self._mesh_mapper.SetResolveCoincidentTopologyToPolygonOffset()
-
+    
         if not self._mesh_actor:
             self._mesh_actor = vtk.vtkActor()
             self.renderer.AddActor(self._mesh_actor)
-
+    
         self._mesh_actor.SetMapper(self._mesh_mapper)
-
+    
         prop = self._mesh_actor.GetProperty()
         prop.SetRepresentationToSurface()
-        prop.EdgeVisibilityOn()
-        prop.SetLineWidth(0.2)
+        prop.EdgeVisibilityOn()       # 显示所有单元边线
+        prop.SetLineWidth(0.8)        # 线/梁更明显
+        prop.SetPointSize(3.0)        # 点单元更明显
         prop.SetDiffuse(0.8)
         prop.SetSpecular(0.3)
         prop.SetInterpolationToPhong()
-
-        # 5. 调整坐标轴大小以匹配模型，同时记录包围盒中心
+    
+        # 5. 调整坐标轴
         if hasattr(self, 'axes_actor') and self.axes_actor:
             bounds = v_np.max(axis=0) - v_np.min(axis=0)
             ref_size = max(bounds) * 0.15
@@ -677,8 +721,8 @@ class MainWindow(QMainWindow):
             self.axes_actor.SetConeRadius(0.2)
             self.axes_actor.SetCylinderRadius(0.02)
         self._model_center = ((v_np.max(axis=0) + v_np.min(axis=0)) / 2.0).tolist()
-
-        # 6. 相机视角：首次加载时重置，后续保留用户视角
+    
+        # 6. 相机
         self._update_bounds_diagonal()
         if not self._camera_initialized:
             self.renderer.ResetCamera()
@@ -689,9 +733,9 @@ class MainWindow(QMainWindow):
             self._camera_initialized = True
         else:
             self.renderer.ResetCameraClippingRange()
-
+    
         self.vtk_widget.GetRenderWindow().Render()
-        self._log("[客户端] 3D 网格渲染更新完成")
+        self._log("[客户端] 全类型单元渲染完成 ✅")
         self.btn_reset_cam.setEnabled(True)
 
     def _on_result_received(self, result):
